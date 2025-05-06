@@ -2,20 +2,129 @@
 
 import { useState } from "react";
 import { InputForm } from "./ui/InputField";
+import { chainsToTSender, erc20Abi } from "@/constants";
+import { useAccount, useChainId, useConfig } from "wagmi";
+import { readContract } from "@wagmi/core";
 
 export default function AirdropForm() {
   const [tokenAddress, setTokenAddress] = useState<string>("");
+  const [recipients, setRecipients] = useState("");
+  const [amounts, setAmounts] = useState("");
 
+  const account = useAccount();
+  const chainId = useChainId();
+  const config = useConfig();
+
+  async function handleSubmit() {
+    console.log("Form submitted");
+    console.log("Token Address:", tokenAddress);
+    console.log("Recipients:", recipients);
+    console.log("Amounts:", amounts);
+
+    const tSenderAddress = chainsToTSender[chainId]?.tsender;
+
+    if (!tSenderAddress) {
+      console.log("No TSender address found for this chain");
+      return;
+    }
+
+    if (!account.address) {
+      alert("Please connect your wallet.");
+      return;
+    }
+
+    if (!tokenAddress || !/^0x[a-fA-F0-9]{40}$/.test(tokenAddress)) {
+      alert("Please enter a valid ERC20 token address (0x...).");
+      return;
+    }
+
+    console.log("Current Chain ID:", chainId);
+    console.log("TSender Address for this chain:", tSenderAddress);
+
+    try {
+      const approvedAmount = await getApprovedAmount(
+        tSenderAddress as `0x${string}`,
+        tokenAddress as `0x${string}`,
+        account.address
+      );
+      console.log(`Current allowance: ${approvedAmount}`);
+    } catch (error) {
+      console.error("Error:", error);
+    }
+  }
+
+  async function getApprovedAmount(
+    spenderAddress: `0x${string}`,
+    erc20TokenAddress: `0x${string}`,
+    ownerAddress: `0x${string}`
+  ): Promise<bigint> {
+    console.log(`Checking allowance for token ${erc20TokenAddress}`);
+    console.log(`Owner: ${ownerAddress}`);
+    console.log(`Spender: ${spenderAddress}`);
+
+    try {
+      const allowance = await readContract(config, {
+        abi: erc20Abi,
+        address: erc20TokenAddress,
+        functionName: "allowance",
+        args: [ownerAddress, spenderAddress],
+      });
+
+      console.log("Raw allowance response:", allowance);
+
+      return allowance as bigint;
+    } catch (error) {
+      console.error("Error:", error);
+      throw new Error("Failed to fetch token allowance.");
+    }
+  }
   return (
     <div className="p-4 space-y-4">
-      {" "}
-      <InputForm
-        label="Token Address"
-        placeholder="Enter token contract address (e.g., 0x...)"
-        value={tokenAddress}
-        onChange={(e) => setTokenAddress(e.target.value)}
-        type="text"
-      />
+      {/* ✅ FORM STARTS HERE */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSubmit();
+        }}
+        className="space-y-4"
+      >
+        {/* Token Address Input */}
+        <InputForm
+          label="Token Address"
+          placeholder="Enter token contract address (e.g., 0x...)"
+          value={tokenAddress}
+          onChange={(e) => setTokenAddress(e.target.value)}
+          type="text"
+        />
+
+        {/* Recipients Input */}
+        <InputForm
+          label="Recipients"
+          placeholder="Comma-separated addresses (e.g., 0x123...,0x456...)"
+          value={recipients}
+          onChange={(e) => setRecipients(e.target.value)}
+          type="text"
+          large
+        />
+
+        {/* Amounts Input */}
+        <InputForm
+          label="Amounts"
+          placeholder="Comma-separated amounts (e.g., 10,20,30)"
+          value={amounts}
+          onChange={(e) => setAmounts(e.target.value)}
+          type="text"
+          large
+        />
+
+        {/* ✅ Submit Button */}
+        <button
+          type="submit"
+          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+        >
+          Check Allowance
+        </button>
+      </form>
     </div>
   );
 }
