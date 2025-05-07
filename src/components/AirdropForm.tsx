@@ -1,19 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { InputForm } from "./ui/InputField";
-import { chainsToTSender, erc20Abi } from "@/constants";
-import { useAccount, useChainId, useConfig } from "wagmi";
-import { readContract } from "@wagmi/core";
+import { chainsToTSender, erc20Abi, tsenderAbi } from "@/constants";
+import { useAccount, useChainId, useConfig, useWriteContract } from "wagmi";
+import { readContract, waitForTransactionReceipt } from "@wagmi/core";
+import { calculateTotal } from "@/utils";
 
 export default function AirdropForm() {
   const [tokenAddress, setTokenAddress] = useState<string>("");
   const [recipients, setRecipients] = useState("");
-  const [amounts, setAmounts] = useState("");
+  const [amounts, setAmounts] = useState<string>("");
 
   const account = useAccount();
   const chainId = useChainId();
   const config = useConfig();
+
+  const {
+    data: hash,
+    isPending,
+    error,
+    writeContractAsync,
+  } = useWriteContract();
+
+  const total: number = useMemo(() => {
+    return calculateTotal(amounts);
+  }, [amounts]);
 
   async function handleSubmit() {
     console.log("Form submitted");
@@ -37,20 +49,73 @@ export default function AirdropForm() {
       alert("Please enter a valid ERC20 token address (0x...).");
       return;
     }
+    const result = await getApprovedAmount(
+      tSenderAddress as `0x${string}`,
+      tokenAddress as `0x${string}`,
+      account.address
+    );
+
+    if (result < total) {
+      const approvalHash = await writeContractAsync({
+        abi: erc20Abi,
+        address: tokenAddress as `0x${string}`,
+        functionName: "approve",
+        args: [tSenderAddress as `0x${string}`, BigInt(total)],
+      });
+
+      console.log("Approval transaction hash:", approvalHash);
+
+      const approvalReceipt = await waitForTransactionReceipt(config, {
+        hash: approvalHash,
+      });
+
+      console.log("Approval transaction receipt:", approvalReceipt);
+
+      await writeContractAsync({
+        abi: tsenderAbi,
+        address: tSenderAddress as `0x${string}`,
+        functionName: "airdropERC20",
+        args: [
+          tokenAddress,
+          // Comma or new line separated
+          recipients
+            .split(/[,\n]+/)
+            .map((addr) => addr.trim())
+            .filter((addr) => addr !== ""),
+          amounts
+            .split(/[,\n]+/)
+            .map((amt) => amt.trim())
+            .filter((amt) => amt !== ""),
+          BigInt(total),
+        ],
+      });
+    } else {
+      await writeContractAsync({
+        abi: tsenderAbi,
+        address: tSenderAddress as `0x${string}`,
+        functionName: "airdropERC20",
+        args: [
+          tokenAddress,
+          // Comma or new line separated
+          recipients
+            .split(/[,\n]+/)
+            .map((addr) => addr.trim())
+            .filter((addr) => addr !== ""),
+          amounts
+            .split(/[,\n]+/)
+            .map((amt) => amt.trim())
+            .filter((amt) => amt !== ""),
+          BigInt(total),
+        ],
+      });
+    }
 
     console.log("Current Chain ID:", chainId);
     console.log("TSender Address for this chain:", tSenderAddress);
+  }
 
-    try {
-      const approvedAmount = await getApprovedAmount(
-        tSenderAddress as `0x${string}`,
-        tokenAddress as `0x${string}`,
-        account.address
-      );
-      console.log(`Current allowance: ${approvedAmount}`);
-    } catch (error) {
-      console.error("Error:", error);
-    }
+  const executeAirdrop = async () => {
+    
   }
 
   async function getApprovedAmount(
@@ -116,6 +181,10 @@ export default function AirdropForm() {
           type="text"
           large
         />
+
+        <div>
+          <strong>Total Amount: {total}</strong>
+        </div>
 
         {/* ✅ Submit Button */}
         <button
