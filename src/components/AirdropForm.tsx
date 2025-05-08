@@ -56,58 +56,35 @@ export default function AirdropForm() {
     );
 
     if (result < total) {
-      const approvalHash = await writeContractAsync({
-        abi: erc20Abi,
-        address: tokenAddress as `0x${string}`,
-        functionName: "approve",
-        args: [tSenderAddress as `0x${string}`, BigInt(total)],
-      });
+      try {
+        const approvalHash = await writeContractAsync({
+          abi: erc20Abi,
+          address: tokenAddress as `0x${string}`,
+          functionName: "approve",
+          args: [tSenderAddress as `0x${string}`, BigInt(total)],
+        });
 
-      console.log("Approval transaction hash:", approvalHash);
+        console.log("Approval transaction hash:", approvalHash);
 
-      const approvalReceipt = await waitForTransactionReceipt(config, {
-        hash: approvalHash,
-      });
+        const approvalReceipt = await waitForTransactionReceipt(config, {
+          hash: approvalHash,
+        });
 
-      console.log("Approval transaction receipt:", approvalReceipt);
+        console.log("Approval transaction receipt:", approvalReceipt);
 
-      await writeContractAsync({
-        abi: tsenderAbi,
-        address: tSenderAddress as `0x${string}`,
-        functionName: "airdropERC20",
-        args: [
-          tokenAddress,
-          // Comma or new line separated
-          recipients
-            .split(/[,\n]+/)
-            .map((addr) => addr.trim())
-            .filter((addr) => addr !== ""),
-          amounts
-            .split(/[,\n]+/)
-            .map((amt) => amt.trim())
-            .filter((amt) => amt !== ""),
-          BigInt(total),
-        ],
-      });
+        if (approvalReceipt.status !== "success") {
+          throw new Error("Approval transaction failed.");
+        } else {
+          console.log("Approval transaction succeeded.");
+          await executeAirdrop();
+        }
+      } catch (error) {
+        console.error("Approval process error:", error);
+        throw new Error("Failed to fetch token allowance.");
+      }
     } else {
-      await writeContractAsync({
-        abi: tsenderAbi,
-        address: tSenderAddress as `0x${string}`,
-        functionName: "airdropERC20",
-        args: [
-          tokenAddress,
-          // Comma or new line separated
-          recipients
-            .split(/[,\n]+/)
-            .map((addr) => addr.trim())
-            .filter((addr) => addr !== ""),
-          amounts
-            .split(/[,\n]+/)
-            .map((amt) => amt.trim())
-            .filter((amt) => amt !== ""),
-          BigInt(total),
-        ],
-      });
+      console.log("Already approved.");
+      await executeAirdrop();
     }
 
     console.log("Current Chain ID:", chainId);
@@ -115,8 +92,42 @@ export default function AirdropForm() {
   }
 
   const executeAirdrop = async () => {
-    
-  }
+    try {
+      const tSenderAddress = chainsToTSender[chainId]?.tsender;
+
+      const recipientAddresses = recipients
+        .split(/[, \n]+/)
+        .map((addr) => addr.trim())
+        .filter((addr) => addr !== "")
+        .map((addr) => addr as `0x${string}`);
+
+      const airdropAmounts = amounts
+        .split(/[, \n]+/)
+        .map((amt) => amt.trim())
+        .filter((amt) => amt !== "")
+        .map((amount) => BigInt(amount));
+
+      const airdropTrxHash = await writeContractAsync({
+        abi: tsenderAbi,
+        address: tSenderAddress as `0x${string}`,
+        functionName: "airdropERC20",
+        args: [
+          tokenAddress as `0x${string}`,
+          recipientAddresses,
+          airdropAmounts,
+        ],
+      });
+
+      const airdropReceipt = await waitForTransactionReceipt(config, {
+        hash: airdropTrxHash,
+      });
+
+      console.log("Airdrop transaction receipt:", airdropReceipt);
+    } catch (error) {
+      console.error("Airdrop process error:", error);
+      throw new Error("Failed to execute airdrop.");
+    }
+  };
 
   async function getApprovedAmount(
     spenderAddress: `0x${string}`,
