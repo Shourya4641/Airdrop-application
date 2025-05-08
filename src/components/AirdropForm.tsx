@@ -7,11 +7,14 @@ import { useAccount, useChainId, useConfig, useWriteContract } from "wagmi";
 import { readContract, waitForTransactionReceipt } from "@wagmi/core";
 import { calculateTotal } from "@/utils";
 import toast, { Toaster } from "react-hot-toast";
+import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
 
 export default function AirdropForm() {
   const [tokenAddress, setTokenAddress] = useState<string>("");
   const [recipients, setRecipients] = useState("");
   const [amounts, setAmounts] = useState<string>("");
+  const [isCheckingAllowance, setIsCheckingAllowance] = useState(false);
 
   const account = useAccount();
   const chainId = useChainId();
@@ -50,6 +53,8 @@ export default function AirdropForm() {
       alert("Please enter a valid ERC20 token address (0x...).");
       return;
     }
+
+    setIsCheckingAllowance(true);
     const result = await getApprovedAmount(
       tSenderAddress as `0x${string}`,
       tokenAddress as `0x${string}`,
@@ -77,6 +82,7 @@ export default function AirdropForm() {
           throw new Error("Approval transaction failed.");
         } else {
           console.log("Approval transaction succeeded.");
+          setIsCheckingAllowance(false);
           await executeAirdrop();
         }
       } catch (error) {
@@ -199,12 +205,17 @@ export default function AirdropForm() {
         </div>
 
         {/* ✅ Submit Button */}
-        <button
-          type="submit"
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-        >
-          Check Allowance
-        </button>
+        <Button variant="outline" disabled={isCheckingAllowance}>
+          {isCheckingAllowance ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Checking allowance
+            </>
+          ) : (
+            "Check Allowance"
+          )}
+        </Button>
+
         <Toaster position="top-center" />
       </form>
     </div>
