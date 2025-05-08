@@ -1,6 +1,5 @@
 "use client";
-
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { InputForm } from "./ui/InputField";
 import { chainsToTSender, erc20Abi, tsenderAbi } from "@/constants";
 import { useAccount, useChainId, useConfig, useWriteContract } from "wagmi";
@@ -9,17 +8,16 @@ import { calculateTotal } from "@/utils";
 import toast, { Toaster } from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
-
 export default function AirdropForm() {
   const [tokenAddress, setTokenAddress] = useState<string>("");
-  const [recipients, setRecipients] = useState("");
+  const [recipients, setRecipients] = useState<string>("");
   const [amounts, setAmounts] = useState<string>("");
   const [isCheckingAllowance, setIsCheckingAllowance] = useState(false);
+  const [initialized, setInitialized] = useState(false);
 
   const account = useAccount();
   const chainId = useChainId();
   const config = useConfig();
-
   const {
     data: hash,
     isPending,
@@ -31,89 +29,110 @@ export default function AirdropForm() {
     return calculateTotal(amounts);
   }, [amounts]);
 
+  useEffect(() => {
+    try {
+      const savedData = localStorage.getItem("airdropFormData");
+      if (savedData) {
+        const parsedData = JSON.parse(savedData);
+        if (parsedData) {
+          setTokenAddress(parsedData.tokenAddress || "");
+          setRecipients(parsedData.recipients || "");
+          setAmounts(parsedData.amounts || "");
+        }
+      }
+    } catch (error) {
+      console.error("Error loading data from localStorage:", error);
+    }
+    setInitialized(true);
+  }, []);
+
+  useEffect(() => {
+    if (initialized) {
+      try {
+        const airdropForm = { tokenAddress, recipients, amounts };
+        localStorage.setItem("airdropFormData", JSON.stringify(airdropForm));
+      } catch (error) {
+        console.error("Error saving to localStorage:", error);
+        toast.error("Failed to save form data locally");
+      }
+    }
+  }, [tokenAddress, recipients, amounts, initialized]);
+
   async function handleSubmit() {
     console.log("Form submitted");
     console.log("Token Address:", tokenAddress);
     console.log("Recipients:", recipients);
     console.log("Amounts:", amounts);
-
     const tSenderAddress = chainsToTSender[chainId]?.tsender;
-
     if (!tSenderAddress) {
       console.log("No TSender address found for this chain");
       return;
     }
-
     if (!account.address) {
       toast.error("Please connect your wallet.");
       return;
     }
-
     if (!tokenAddress || !/^0x[a-fA-F0-9]{40}$/.test(tokenAddress)) {
-      alert("Please enter a valid ERC20 token address (0x...).");
+      toast.error("Please enter a valid ERC20 token address (0x...).");
       return;
     }
-
     setIsCheckingAllowance(true);
-    const result = await getApprovedAmount(
-      tSenderAddress as `0x${string}`,
-      tokenAddress as `0x${string}`,
-      account.address
-    );
-
-    if (result < total) {
-      try {
-        const approvalHash = await writeContractAsync({
-          abi: erc20Abi,
-          address: tokenAddress as `0x${string}`,
-          functionName: "approve",
-          args: [tSenderAddress as `0x${string}`, BigInt(total)],
-        });
-
-        console.log("Approval transaction hash:", approvalHash);
-
-        const approvalReceipt = await waitForTransactionReceipt(config, {
-          hash: approvalHash,
-        });
-
-        console.log("Approval transaction receipt:", approvalReceipt);
-
-        if (approvalReceipt.status !== "success") {
-          throw new Error("Approval transaction failed.");
-        } else {
-          console.log("Approval transaction succeeded.");
+    try {
+      const result = await getApprovedAmount(
+        tSenderAddress as `0x${string}`,
+        tokenAddress as `0x${string}`,
+        account.address
+      );
+      if (result < total) {
+        try {
+          const approvalHash = await writeContractAsync({
+            abi: erc20Abi,
+            address: tokenAddress as `0x${string}`,
+            functionName: "approve",
+            args: [tSenderAddress as `0x${string}`, BigInt(total)],
+          });
+          console.log("Approval transaction hash:", approvalHash);
+          const approvalReceipt = await waitForTransactionReceipt(config, {
+            hash: approvalHash,
+          });
+          console.log("Approval transaction receipt:", approvalReceipt);
+          if (approvalReceipt.status !== "success") {
+            throw new Error("Approval transaction failed.");
+          } else {
+            console.log("Approval transaction succeeded.");
+            setIsCheckingAllowance(false);
+            await executeAirdrop();
+          }
+        } catch (error) {
+          console.error("Approval process error:", error);
+          toast.error("Failed to approve token spending");
           setIsCheckingAllowance(false);
-          await executeAirdrop();
         }
-      } catch (error) {
-        console.error("Approval process error:", error);
-        throw new Error("Failed to fetch token allowance.");
+      } else {
+        console.log("Already approved.");
+        setIsCheckingAllowance(false);
+        await executeAirdrop();
       }
-    } else {
-      console.log("Already approved.");
-      await executeAirdrop();
+    } catch (error) {
+      console.error("Error checking allowance:", error);
+      toast.error("Failed to check token allowance");
+      setIsCheckingAllowance(false);
     }
-
-    console.log("Current Chain ID:", chainId);
-    console.log("TSender Address for this chain:", tSenderAddress);
   }
 
   const executeAirdrop = async () => {
     try {
       const tSenderAddress = chainsToTSender[chainId]?.tsender;
-
       const recipientAddresses = recipients
         .split(/[, \n]+/)
         .map((addr) => addr.trim())
         .filter((addr) => addr !== "")
         .map((addr) => addr as `0x${string}`);
-
       const airdropAmounts = amounts
         .split(/[, \n]+/)
         .map((amt) => amt.trim())
         .filter((amt) => amt !== "")
         .map((amount) => BigInt(amount));
-
       const airdropTrxHash = await writeContractAsync({
         abi: tsenderAbi,
         address: tSenderAddress as `0x${string}`,
@@ -124,15 +143,17 @@ export default function AirdropForm() {
           airdropAmounts,
         ],
       });
-
-      const airdropReceipt = await waitForTransactionReceipt(config, {
-        hash: airdropTrxHash,
-      });
-
-      console.log("Airdrop transaction receipt:", airdropReceipt);
+      toast.promise(
+        waitForTransactionReceipt(config, { hash: airdropTrxHash }),
+        {
+          loading: "Processing airdrop...",
+          success: "Airdrop completed successfully!",
+          error: "Airdrop failed",
+        }
+      );
     } catch (error) {
       console.error("Airdrop process error:", error);
-      throw new Error("Failed to execute airdrop.");
+      toast.error("Failed to execute airdrop");
     }
   };
 
@@ -144,7 +165,6 @@ export default function AirdropForm() {
     console.log(`Checking allowance for token ${erc20TokenAddress}`);
     console.log(`Owner: ${ownerAddress}`);
     console.log(`Spender: ${spenderAddress}`);
-
     try {
       const allowance = await readContract(config, {
         abi: erc20Abi,
@@ -152,18 +172,16 @@ export default function AirdropForm() {
         functionName: "allowance",
         args: [ownerAddress, spenderAddress],
       });
-
       console.log("Raw allowance response:", allowance);
-
       return allowance as bigint;
     } catch (error) {
       console.error("Error:", error);
       throw new Error("Failed to fetch token allowance.");
     }
   }
+
   return (
     <div className="p-4 space-y-4">
-      {/* ✅ FORM STARTS HERE */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -199,12 +217,11 @@ export default function AirdropForm() {
           type="text"
           large
         />
-
         <div>
           <strong>Total Amount: {total}</strong>
         </div>
 
-        {/* ✅ Submit Button */}
+        {/* Submit Button */}
         <Button variant="outline" disabled={isCheckingAllowance}>
           {isCheckingAllowance ? (
             <>
@@ -215,7 +232,6 @@ export default function AirdropForm() {
             "Check Allowance"
           )}
         </Button>
-
         <Toaster position="top-center" />
       </form>
     </div>
