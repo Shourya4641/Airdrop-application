@@ -112,6 +112,12 @@ export default function AirdropForm() {
         console.log("Already approved.");
         setIsCheckingAllowance(false);
         await executeAirdrop();
+
+        localStorage.removeItem("airdropFormData");
+
+        setTokenAddress("");
+        setRecipients("");
+        setAmounts("");
       }
     } catch (error) {
       console.error("Error checking allowance:", error);
@@ -222,16 +228,32 @@ export default function AirdropForm() {
         </div>
 
         {/* Submit Button */}
-        <Button variant="outline" disabled={isCheckingAllowance}>
-          {isCheckingAllowance ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Checking allowance
-            </>
-          ) : (
-            "Check Allowance"
-          )}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" disabled={isCheckingAllowance}>
+            {isCheckingAllowance ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Checking allowance
+              </>
+            ) : (
+              "Check Allowance"
+            )}
+          </Button>
+
+          <Button
+            variant="destructive"
+            type="button"
+            onClick={() => {
+              localStorage.removeItem("airdropFormData");
+
+              setTokenAddress("");
+              setRecipients("");
+              setAmounts("");
+            }}
+          >
+            Reset
+          </Button>
+        </div>
         <Toaster position="top-center" />
       </form>
     </div>
