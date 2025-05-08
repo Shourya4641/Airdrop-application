@@ -6,6 +6,7 @@ import { chainsToTSender, erc20Abi, tsenderAbi } from "@/constants";
 import { useAccount, useChainId, useConfig, useWriteContract } from "wagmi";
 import { readContract, waitForTransactionReceipt } from "@wagmi/core";
 import { calculateTotal } from "@/utils";
+import toast, { Toaster } from "react-hot-toast";
 
 export default function AirdropForm() {
   const [tokenAddress, setTokenAddress] = useState<string>("");
@@ -41,7 +42,7 @@ export default function AirdropForm() {
     }
 
     if (!account.address) {
-      alert("Please connect your wallet.");
+      toast.error("Please connect your wallet.");
       return;
     }
 
@@ -204,6 +205,7 @@ export default function AirdropForm() {
         >
           Check Allowance
         </button>
+        <Toaster position="top-center" />
       </form>
     </div>
   );
