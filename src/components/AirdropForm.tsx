@@ -18,12 +18,7 @@ export default function AirdropForm() {
   const account = useAccount();
   const chainId = useChainId();
   const config = useConfig();
-  const {
-    data: hash,
-    isPending,
-    error,
-    writeContractAsync,
-  } = useWriteContract();
+  const { writeContractAsync } = useWriteContract();
 
   const total: number = useMemo(() => {
     return calculateTotal(amounts);
@@ -147,6 +142,7 @@ export default function AirdropForm() {
           tokenAddress as `0x${string}`,
           recipientAddresses,
           airdropAmounts,
+          total,
         ],
       });
       toast.promise(
